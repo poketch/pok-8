@@ -7,7 +7,7 @@ const RAM_SIZE: usize = 4096;
 const NUM_REGS: usize = 16;
 const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
-const START_ADDR: u16 = 0x00;
+const START_ADDR: u16 = 0x200;
 
 const FONTSET_SIZE: usize = 80;
 
@@ -31,7 +31,7 @@ const FONTSET: [u8; FONTSET_SIZE] = [
 ];
 
 // Core Emulator Structure
-struct Emu {
+pub struct Emu {
     pc: u16,                                      // one byte program counter
     ram: [u8; RAM_SIZE],                          // 4 kilobytes of ram
     screen: [bool; SCREEN_WIDTH * SCREEN_HEIGHT], // screen of "single bits"
@@ -148,7 +148,7 @@ impl Emu {
         let dig1 = (op & 0xF000) >> 12;
         let dig2 = (op & 0x0F00) >> 8;
         let dig3 = (op & 0x00F0) >> 4;
-        let dig4 = (op & 0x000F);
+        let dig4 = op & 0x000F;
 
         // Process and execute op code
         match (dig1, dig2, dig3, dig4) {
@@ -162,20 +162,20 @@ impl Emu {
             (0, 0, 0xE, 0xE) => {
                 let ret_addr = self.pop();
                 self.pc = ret_addr;
-            }
+            },
 
             // 0x1NNN - Jump to address NNN
             (1, _, _, _) => {
                 let nnn = op & 0xFFF;
                 self.pc = nnn;
-            }
+            },
 
             // 0x2NNN - Call subroutine at NNN
-            (1, _, _, _) => {
+            (2, _, _, _) => {
                 let nnn = op & 0xFFF;
                 self.push(self.pc);
                 self.pc = nnn;
-            }
+            },
 
             // 0x2XNN - Skip Next if VX == NN
             (3, _, _, _) => {
@@ -185,7 +185,7 @@ impl Emu {
                 if self.v_reg[x] == nn {
                     self.pc += 2;
                 }
-            }
+            },
 
             // 0x4XNN - Skip Next if VX !== NN
             (4, _, _, _) => {
@@ -195,7 +195,7 @@ impl Emu {
                 if self.v_reg[x] != nn {
                     self.pc += 2;
                 }
-            }
+            },
 
             // 0x5XY0 - Skip Next if VX == VY
             (5, _, _, 0) => {
@@ -205,7 +205,7 @@ impl Emu {
                 if self.v_reg[x] == self.v_reg[y] {
                     self.pc += 2;
                 }
-            }
+            },
 
             // 0x6XNN - VX == NN
             (6, _, _, _) => {
@@ -213,7 +213,7 @@ impl Emu {
                 let nn = (op & 0xFF) as u8;
 
                 self.v_reg[x] = nn;
-            }
+            },
 
             // 0x7XNN - VX += NN, wrapping avoid panic at overflow
             (7, _, _, _) => {
@@ -221,7 +221,7 @@ impl Emu {
                 let nn = (op & 0xFF) as u8;
 
                 self.v_reg[x] = self.v_reg[x].wrapping_add(nn);
-            }
+            },
 
             // 0x8XY0 - VX = VY
             (8, _, _, 0) => {
@@ -229,7 +229,7 @@ impl Emu {
                 let y = dig3 as usize;
 
                 self.v_reg[x] = self.v_reg[y];
-            }
+            },
 
             // 0x8XY1 - Bitwise OP VX |= VY
             (8, _, _, 1) => {
@@ -237,7 +237,7 @@ impl Emu {
                 let y = dig3 as usize;
 
                 self.v_reg[x] |= self.v_reg[y];
-            }
+            },
 
             // 0x8XY2 - Bitwise OP VX &= VY
             (8, _, _, 2) => {
@@ -245,7 +245,7 @@ impl Emu {
                 let y = dig3 as usize;
 
                 self.v_reg[x] &= self.v_reg[y];
-            }
+            },
 
             // 0x8XY3 - Bitwise OP VX ^= VY
             (8, _, _, 3) => {
@@ -253,7 +253,7 @@ impl Emu {
                 let y = dig3 as usize;
 
                 self.v_reg[x] ^= self.v_reg[y];
-            }
+            },
 
             // 0x8XY4 - VX += VY, set VF to 1 in case of overload
             (8, _, _, 4) => {
@@ -265,7 +265,7 @@ impl Emu {
 
                 self.v_reg[x] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            }
+            },
 
             // 0x8XY5 - VX -= VY, set VF to 0 in case of underflow
             (8, _, _, 5) => {
@@ -277,7 +277,7 @@ impl Emu {
 
                 self.v_reg[x] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            }
+            },
 
             // 0x8XY6 - VX >>= 1, Right Shift VX by 1, least significant bit is stored in VF
             (8, _, _, 6) => {
@@ -286,7 +286,7 @@ impl Emu {
 
                 self.v_reg[x] >>= 1;
                 self.v_reg[0xF] = lsb;
-            }
+            },
 
             // 0x8XY7 - VX = VY - VX, set VF to 0 in case of underflow
             (8, _, _, 7) => {
@@ -298,7 +298,7 @@ impl Emu {
 
                 self.v_reg[x] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            }
+            },
 
             // 0x8XYE - VX <<= 1, Most significant bit is sotred in VF
             (8, _, _, 0xE) => {
@@ -307,7 +307,7 @@ impl Emu {
 
                 self.v_reg[x] <<= 1;
                 self.v_reg[0xF] = msb;
-            }
+            },
 
             // 0x9XY0 - Skip Next if VX != VY
             (9, _, _, 0) => {
@@ -317,21 +317,21 @@ impl Emu {
                 if self.v_reg[x] != self.v_reg[y] {
                     self.pc += 2;
                 }
-            }
+            },
 
             // ANNN - I = NNN
             (0xA, _, _, _) => {
                 let nnn = op & 0xFFF;
 
                 self.i_reg = nnn;
-            }
+            },
 
             // BNNN - Jump to V0 + NNN
             (0xB, _, _, _) => {
                 let nnn = op & 0xFFF;
 
                 self.pc = (self.v_reg[0] as u16) + nnn;
-            }
+            },
 
             // CXNN - VX = rand() and NN
             (0xC, _, _, _) => {
@@ -340,7 +340,7 @@ impl Emu {
                 let rng: u8 = random();
 
                 self.v_reg[x] = rng & nn;
-            }
+            },
 
             // DXYN - Draw SPrite, XY are VX/VY coord of sprite, N is the height of sprite
             (0xD, _, _, _) => {
@@ -372,10 +372,10 @@ impl Emu {
                 } else {
                     self.v_reg[0xF] = 0;
                 }
-            }
+            },
 
             // EX0E - Skip if key in VX pressed
-            (0xE, _, 0, 0xE) => {
+            (0xE, _, 9, 0xE) => {
                 let x = dig2 as usize;
                 let vx = self.v_reg[x];
                 let key = self.keys[vx as usize];
@@ -383,7 +383,7 @@ impl Emu {
                 if key {
                     self.pc += 2;
                 }
-            }
+            },
 
             // EXA1 - Skip if key in VX not pressed
             (0xE, _, 0xA, 1) => {
@@ -394,13 +394,13 @@ impl Emu {
                 if !key {
                     self.pc += 2;
                 }
-            }
+            },
 
             // FX07 - VX = Delay Timer
             (0xF, _, 0, 7) => {
                 let x = dig2 as usize;
                 self.v_reg[x] = self.dt;
-            }
+            },
 
             // EX0A - Wait for Key press
             (0xF, _, 0, 0xA) => {
@@ -418,34 +418,34 @@ impl Emu {
                     // redo opcode until key presesd
                     self.pc -= 2;
                 }
-            }
+            },
 
             // FX15 - DT = VX
             (0xF, _, 1, 5) => {
                 let x = dig2 as usize;
                 self.dt = self.v_reg[x];
-            }
+            },
             
             // FX18 - ST = VX
             (0xF, _, 1, 8) => {
                 let x = dig2 as usize;
                 self.st = self.v_reg[x];
-            }
+            },
             
             // FX1E - I += VX
             (0xF, _, 1, 0xE) => {
                 let x = dig2 as usize;
                 let vx = self.v_reg[x] as u16;
                 self.i_reg = self.i_reg.wrapping_add(vx);
-            }
+            },
             
             // FX29 - Set I to Font Address
-            (0xF, _, 1, 0xE) => {
+            (0xF, _, 2, 9) => {
 
                 let x = dig2 as usize;
                 let c = self.v_reg[x] as u16;
                 self.i_reg = c * 5;
-            }
+            },
 
             // FX33 - I = Binary Coded Decimal of VX
             (0xF, _, 3, 3) => {
@@ -466,7 +466,7 @@ impl Emu {
                 self.ram[self.i_reg as usize] = hundreds;
                 self.ram[(self.i_reg + 1) as usize] = tens;
                 self.ram[(self.i_reg + 2) as usize] = ones;
-            }
+            },
 
             // FX55 - Store V0 - VX into I
             (0xF, _, 5, 5) => {
@@ -476,7 +476,7 @@ impl Emu {
                 for idx in 0..=x {
                     self.ram[i + idx] = self.v_reg[idx];
                 }
-            }
+            },
             
             // FX65 - Load I into V0 - VX
             (0xF, _, 6, 5) => {
@@ -486,9 +486,9 @@ impl Emu {
                 for idx in 0..=x {
                     self.v_reg[idx] = self.ram[i + idx];
                 }
-            }
+            },
             
-            (_, _, _, _) => unimplemented!("Unimplemented opcode {}", op),
+            (_, _, _, _) => unimplemented!("Unimplemented opcode {:#02x}", op),
         }
     }
 }
