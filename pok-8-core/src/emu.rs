@@ -447,25 +447,17 @@ impl Emu {
                 self.i_reg = c * 5;
             },
 
-            // FX33 - I = Binary Coded Decimal of VX
+            // FX33 - RAM[I] = Binary Coded Decimal of VX
             (0xF, _, 3, 3) => {
-                // since VX is a u8 it ranges from 0 to 255 it will always be three digits
-
+                // since VX is a u8 it ranges from 0 to 255, it will always be three digits
                 let x = dig2 as usize;
-                let vx = self.v_reg[x] as f32; // TODO: Optimise this BCD algo
+                let vx = self.v_reg[x];
 
-                // Fetch the hundreds digit
-                let hundreds = (vx / 100.0).floor() as u8;
+                let bcd = Self::double_dabble(&vx);
 
-                // Fetch the tens digit
-                let tens = ((vx / 10.0) % 10.0).floor() as u8;
-
-                // Fetch the singles digit
-                let ones = (vx % 10.0).floor() as u8;
-
-                self.ram[self.i_reg as usize] = hundreds;
-                self.ram[(self.i_reg + 1) as usize] = tens;
-                self.ram[(self.i_reg + 2) as usize] = ones;
+                self.ram[self.i_reg as usize] = bcd[0];
+                self.ram[(self.i_reg + 1) as usize] = bcd[1];
+                self.ram[(self.i_reg + 2) as usize] = bcd[2];
             },
 
             // FX55 - Store V0 - VX into I
@@ -491,4 +483,41 @@ impl Emu {
             (_, _, _, _) => unimplemented!("Unimplemented opcode {:#02x}", op),
         }
     }
+
+    pub fn double_dabble(num: &u8) -> [u8; 3] {
+        // implementation of the double dable algorithm for finding BCD
+        // 7ns per cycle compared to the book's 25ns
+        
+        let mut res: u32 = (0 | num) as u32; // convert to 32-bit num for padding, need 4bits for every digit (20 in this case)
+        
+        // masks to extract relevant digit from number
+        let ones_mask = 0b1111_0000_0000; 
+        let tens_mask = 0b1111_0000_0000_0000;
+        let huns_mask = 0b1111_0000_0000_0000_0000;
+        
+        for _ in 0..8 { // algo will only shift length of num times (8 times)
+            
+            if res & ones_mask >= 0b0101_0000_0000 {
+                
+                res += 0b0011_0000_0000; // if ones digit is greater than or equal to 5 add 3 to THAT digit
+            }
+            if res & tens_mask >= 0b0101_0000_0000_0000 {
+                
+                res += 0b0011_0000_0000_0000;
+            }
+            if res & huns_mask >= 0b0101_0000_0000_0000_0000 {
+                
+                res += 0b0011_0000_0000_0000_0000;
+            }
+            
+            res <<= 1;
+        }
+        
+        let huns = (res & huns_mask) >> 16;
+        let tens = (res & tens_mask) >> 12;
+        let ones = (res & ones_mask) >> 8;
+
+        [huns as u8, tens as u8, ones as u8]
+    }
 }
+

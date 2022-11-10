@@ -2,3 +2,4 @@
 [workspace]
 
 members = ["pok-8-core", "frontend-desktop"]
+
