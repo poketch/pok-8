@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 rand = "^0.7.3"
 bencher = "0.1.5"
-
+playback-rs = "0.2.5"
 
 [[bench]]
 name = "emu_bcd"

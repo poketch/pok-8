@@ -1,4 +1,5 @@
 use crate::instruction::*;
+use crate::speaker::*;
 
 use rand::random;
 
@@ -45,6 +46,7 @@ pub struct Emu {
     keys: [bool; NUM_KEYS],   // input handling
     dt: u8,                   // Delay Timer
     st: u8,                   //Sound Timer
+    buzzer: Buzzer,
 }
 
 impl Emu {
@@ -60,6 +62,7 @@ impl Emu {
             keys: [false; NUM_KEYS],
             dt: 0,
             st: 0,
+            buzzer: Buzzer::init(),
         };
         new_emu.ram[0..FONTSET_SIZE].copy_from_slice(&FONTSET);
 
@@ -99,7 +102,7 @@ impl Emu {
 
         if self.st > 0 {
             if self.st == 1 {
-                // TRIGGER SOUND
+                self.buzzer.play();
             }
             self.st -= 1;
         }
@@ -120,9 +123,11 @@ impl Emu {
     pub fn load(&mut self, data: &[u8]) -> () {
         self.ram[(START_ADDR as usize)..((START_ADDR as usize) + data.len())].copy_from_slice(data);
     }
+
 }
 
 impl Emu {
+
     fn clear_screen(&mut self) -> () {
         // change all screen bits to 0
         self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];

@@ -16,7 +16,7 @@ const WHITE: Color = Color::RGB(255, 255, 255);
 const DEFAULT_SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = SCREEN_WIDTH as u32;
 const WINDOW_HEIGHT: u32 = SCREEN_HEIGHT as u32;
-const TICKS_PER_FRAME: usize = 15;
+const TICKS_PER_FRAME: usize = 10;
 
 pub struct POK8;
 
