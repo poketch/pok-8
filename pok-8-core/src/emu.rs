@@ -13,7 +13,7 @@ const START_ADDR: u16 = 0x200;
 
 const FONTSET_SIZE: usize = 80;
 
-// Refactor fontset into a 2D array
+// TODO: Refactor fontset into a 2D array
 const FONTSET: [u8; FONTSET_SIZE] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1

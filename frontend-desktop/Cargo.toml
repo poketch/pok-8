@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 
 pok-8-core = { path = "../pok-8-core"}
-sdl2 = "^0.35.2"
+sdl2 = { version = "^0.35.2", features = ["image"] }

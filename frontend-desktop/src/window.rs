@@ -1,6 +1,7 @@
 use pok_8_core::emu::*;
 
 use sdl2::event::Event;
+use sdl2::image::LoadSurface;
 use sdl2::keyboard::Keycode;
 use sdl2::{pixels::Color, rect::Rect, render::Canvas, video::Window};
 
@@ -8,17 +9,19 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+
 const BLACK: Color = Color::RGB(0, 0, 0);
 const WHITE: Color = Color::RGB(255, 255, 255);
-
-pub struct POK8;
 
 const DEFAULT_SCALE: u32 = 15;
 const WINDOW_WIDTH: u32 = SCREEN_WIDTH as u32;
 const WINDOW_HEIGHT: u32 = SCREEN_HEIGHT as u32;
-const TICKS_PER_FRAME: usize = 10;
+const TICKS_PER_FRAME: usize = 15;
+
+pub struct POK8;
 
 impl POK8 {
+    // TODO: try to refacto this into multiple functions? SDL doesn't seem to like that
     pub fn init(path_to_rom: impl Into<PathBuf>, scale: Option<u32>) -> () {
         
         let scale = scale.unwrap_or(DEFAULT_SCALE);
@@ -26,12 +29,15 @@ impl POK8 {
         // Setup SDL
         let sdl_context = sdl2::init().unwrap();
         let video_subsystem = sdl_context.video().unwrap();
-        let window = video_subsystem
+        let mut window = video_subsystem
             .window("POK8 Emulator", WINDOW_WIDTH * scale, WINDOW_HEIGHT * scale)
             .position_centered()
             .opengl()
             .build()
             .unwrap();
+            
+        window.set_icon(sdl2::surface::Surface::from_file("./frontend-desktop/POK8_logo.png").unwrap());
+
 
         let mut canvas = window.into_canvas().present_vsync().build().unwrap();
         canvas.clear();
