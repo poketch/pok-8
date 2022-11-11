@@ -1,3 +1,5 @@
+use crate::instruction::*;
+
 use rand::random;
 
 pub const SCREEN_WIDTH: usize = 64;
@@ -11,6 +13,7 @@ const START_ADDR: u16 = 0x200;
 
 const FONTSET_SIZE: usize = 80;
 
+// Refactor fontset into a 2D array
 const FONTSET: [u8; FONTSET_SIZE] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -80,9 +83,12 @@ impl Emu {
     // Main Intepreter Cycle => Fetch -> Decode -> Execute
     pub fn cycle(&mut self) -> () {
         // Fetch
-        let op = self.fetch();
+        let byte = self.fetch();
 
-        // Decode and Execute
+        // Decode
+        let op = self.decode(byte);
+
+        // Execute
         self.execute(op);
     }
 
@@ -117,14 +123,19 @@ impl Emu {
 }
 
 impl Emu {
+    fn clear_screen(&mut self) -> () {
+        // change all screen bits to 0
+        self.screen = [false; SCREEN_WIDTH * SCREEN_HEIGHT];
+    }
+
     // Push value to CPU stack
-    fn push(&mut self, val: u16) -> () {
+    fn stack_push(&mut self, val: u16) -> () {
         self.stack[self.sp as usize] = val;
         self.sp += 1;
     }
 
     // Pop value from CPU stack
-    fn pop(&mut self) -> u16 {
+    fn stack_pop(&mut self) -> u16 {
         self.sp -= 1;
         self.stack[self.sp as usize]
     }
@@ -143,211 +154,216 @@ impl Emu {
         op
     }
 
-    fn execute(&mut self, op: u16) -> () {
+    fn decode(&mut self, byte: u16) -> Instruction {
         //unpack the digits so we can pattern match them
-        let dig1 = (op & 0xF000) >> 12;
-        let dig2 = (op & 0x0F00) >> 8;
-        let dig3 = (op & 0x00F0) >> 4;
-        let dig4 = op & 0x000F;
+        let dig1 = (byte & 0xF000) >> 12;
+        let dig2 = (byte & 0x0F00) >> 8;
+        let dig3 = (byte & 0x00F0) >> 4;
+        let dig4 = byte & 0x000F;
 
-        // Process and execute op code
         match (dig1, dig2, dig3, dig4) {
-            // 0x0000 NOP - do nothing
-            (0, 0, 0, 0) => return,
+            (0, 0, 0, 0) => Instruction::NOP,
 
-            // 0x00E0 - Clear screen
-            (0, 0, 0xE, 0) => self.screen = [false; SCREEN_HEIGHT * SCREEN_WIDTH],
+            (0, 0, 0xE, 0) => Instruction::CLR,
 
-            // 0x00EE - Return from Sub routine
-            (0, 0, 0xE, 0xE) => {
-                let ret_addr = self.pop();
-                self.pc = ret_addr;
-            },
+            (0, 0, 0xE, 0xE) => Instruction::RET,
 
-            // 0x1NNN - Jump to address NNN
-            (1, _, _, _) => {
-                let nnn = op & 0xFFF;
-                self.pc = nnn;
-            },
+            (1, _, _, _) => Instruction::JMP(byte & 0xFFF),
 
-            // 0x2NNN - Call subroutine at NNN
-            (2, _, _, _) => {
-                let nnn = op & 0xFFF;
-                self.push(self.pc);
-                self.pc = nnn;
-            },
+            (2, _, _, _) => Instruction::CALL(byte & 0xFFF),
 
-            // 0x2XNN - Skip Next if VX == NN
-            (3, _, _, _) => {
-                let x = dig2 as usize;
-                let nn = (op & 0xFF) as u8;
+            (3, _, _, _) => Instruction::SKIPIFVNN(dig2, byte & 0xFF),
 
-                if self.v_reg[x] == nn {
+            (4, _, _, _) => Instruction::SKIPIFNOTVNN(dig2, byte & 0xFF),
+
+            (5, _, _, 0) => Instruction::SKIPIFVV(dig2, dig3),
+
+            (6, _, _, _) => Instruction::SETVNN(dig2, byte & 0xFF),
+
+            (7, _, _, _) => Instruction::INCSETVNN(dig2, byte & 0xFF),
+
+            (8, _, _, 0) => Instruction::SETVV(dig2, dig3),
+
+            (8, _, _, 1) => Instruction::ORSETVV(dig2, dig3),
+
+            (8, _, _, 2) => Instruction::ANDSETVV(dig2, dig3),
+
+            (8, _, _, 3) => Instruction::XORSETVV(dig2, dig3),
+
+            (8, _, _, 4) => Instruction::INCSETVV(dig2, dig3),
+
+            (8, _, _, 5) => Instruction::DECSETVV(dig2, dig3),
+
+            (8, _, _, 6) => Instruction::SHIFTRV(dig2),
+
+            (8, _, _, 7) => Instruction::DIFFSETVV(dig2, dig3),
+
+            (8, _, _, 0xE) => Instruction::SHIFTLV(dig2),
+
+            (9, _, _, 0) => Instruction::SKIPIFNOTVV(dig2, dig3),
+
+            (0xA, _, _, _) => Instruction::SETINNN(byte & 0xFFF),
+
+            (0xB, _, _, _) => Instruction::JMPV(byte & 0xfFF),
+
+            (0xC, _, _, _) => Instruction::RAND(dig2, byte & 0xFF),
+
+            (0xD, _, _, _) => Instruction::DRAW(dig2, dig3, dig4),
+
+            (0xE, _, 9, 0xE) => Instruction::SKIPIFKEY(dig2),
+
+            (0xE, _, 0xA, 1) => Instruction::SKIPIFNOTKEY(dig2),
+
+            (0xF, _, 0, 7) => Instruction::SETVDT(dig2),
+
+            (0xF, _, 0, 0xA) => Instruction::WAITFORKEY(dig2),
+
+            (0xF, _, 1, 5) => Instruction::SETDTV(dig2),
+
+            (0xF, _, 1, 8) => Instruction::SETSTV(dig2),
+
+            (0xF, _, 1, 0xE) => Instruction::INCSETIV(dig2),
+
+            (0xF, _, 2, 9) => Instruction::SETIFONT(dig2),
+
+            (0xF, _, 3, 3) => Instruction::BCDTORAM(dig2),
+
+            (0xF, _, 5, 5) => Instruction::VTORAM(dig2),
+
+            (0xF, _, 6, 5) => Instruction::RAMTOV(dig2),
+
+            (_, _, _, _) => unimplemented!(
+                "DECODING: Error parsing unknown byte {:#02X} into byte code",
+                byte
+            ),
+        }
+    }
+
+    fn execute(&mut self, op: Instruction) -> () {
+        match op {
+            Instruction::NOP => return,
+
+            Instruction::CLR => self.clear_screen(),
+
+            Instruction::RET => {
+                self.pc = self.stack_pop();
+            }
+
+            Instruction::JMP(address) => {
+                self.pc = address;
+            }
+
+            Instruction::CALL(address) => {
+                self.stack_push(self.pc);
+                self.pc = address;
+            }
+
+            Instruction::SKIPIFVNN(x, nn) => {
+                if self.v_reg[x as usize] == nn as u8 {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // 0x4XNN - Skip Next if VX !== NN
-            (4, _, _, _) => {
-                let x = dig2 as usize;
-                let nn = (op & 0xFF) as u8;
-
-                if self.v_reg[x] != nn {
+            Instruction::SKIPIFNOTVNN(x, nn) => {
+                if self.v_reg[x as usize] != nn as u8 {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // 0x5XY0 - Skip Next if VX == VY
-            (5, _, _, 0) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                if self.v_reg[x] == self.v_reg[y] {
+            Instruction::SKIPIFVV(x, y) => {
+                if self.v_reg[x as usize] == self.v_reg[y as usize] {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // 0x6XNN - VX == NN
-            (6, _, _, _) => {
-                let x = dig2 as usize;
-                let nn = (op & 0xFF) as u8;
+            Instruction::SETVNN(x, nn) => {
+                self.v_reg[x as usize] = nn as u8;
+            }
 
-                self.v_reg[x] = nn;
-            },
+            Instruction::INCSETVNN(x, nn) => {
+                self.v_reg[x as usize] = self.v_reg[x as usize].wrapping_add(nn as u8);
+                //wrapping avoid panic at overflow, VF not set
+            }
 
-            // 0x7XNN - VX += NN, wrapping avoid panic at overflow
-            (7, _, _, _) => {
-                let x = dig2 as usize;
-                let nn = (op & 0xFF) as u8;
+            Instruction::SETVV(x, y) => {
+                self.v_reg[x as usize] = self.v_reg[y as usize];
+            }
 
-                self.v_reg[x] = self.v_reg[x].wrapping_add(nn);
-            },
+            Instruction::ORSETVV(x, y) => {
+                self.v_reg[x as usize] |= self.v_reg[y as usize];
+            }
 
-            // 0x8XY0 - VX = VY
-            (8, _, _, 0) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
+            Instruction::ANDSETVV(x, y) => {
+                self.v_reg[x as usize] &= self.v_reg[y as usize];
+            }
 
-                self.v_reg[x] = self.v_reg[y];
-            },
+            Instruction::XORSETVV(x, y) => {
+                self.v_reg[x as usize] ^= self.v_reg[y as usize];
+            }
 
-            // 0x8XY1 - Bitwise OP VX |= VY
-            (8, _, _, 1) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
+            Instruction::INCSETVV(x, y) => {
+                let (new_vx, carry) =
+                    self.v_reg[x as usize].overflowing_add(self.v_reg[y as usize]);
+                let new_vf = if carry { 1 } else { 0 }; // set VF if overflow
 
-                self.v_reg[x] |= self.v_reg[y];
-            },
-
-            // 0x8XY2 - Bitwise OP VX &= VY
-            (8, _, _, 2) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                self.v_reg[x] &= self.v_reg[y];
-            },
-
-            // 0x8XY3 - Bitwise OP VX ^= VY
-            (8, _, _, 3) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                self.v_reg[x] ^= self.v_reg[y];
-            },
-
-            // 0x8XY4 - VX += VY, set VF to 1 in case of overload
-            (8, _, _, 4) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                let (new_vx, carry) = self.v_reg[x].overflowing_add(self.v_reg[y]);
-                let new_vf = if carry { 1 } else { 0 };
-
-                self.v_reg[x] = new_vx;
+                self.v_reg[x as usize] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            },
+            }
 
-            // 0x8XY5 - VX -= VY, set VF to 0 in case of underflow
-            (8, _, _, 5) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
+            Instruction::DECSETVV(x, y) => {
+                let (new_vx, borrow) =
+                    self.v_reg[x as usize].overflowing_sub(self.v_reg[y as usize]);
+                let new_vf = if borrow { 0 } else { 1 }; // reset VF if borrow
 
-                let (new_vx, borrow) = self.v_reg[x].overflowing_sub(self.v_reg[y]);
-                let new_vf = if borrow { 0 } else { 1 };
-
-                self.v_reg[x] = new_vx;
+                self.v_reg[x as usize] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            },
+            }
 
-            // 0x8XY6 - VX >>= 1, Right Shift VX by 1, least significant bit is stored in VF
-            (8, _, _, 6) => {
-                let x = dig2 as usize;
-                let lsb = self.v_reg[x] & 1;
+            Instruction::SHIFTRV(x) => {
+                self.v_reg[0xF] = self.v_reg[x as usize] & 1;
+                self.v_reg[x as usize] >>= 1;
+            }
 
-                self.v_reg[x] >>= 1;
-                self.v_reg[0xF] = lsb;
-            },
+            Instruction::DIFFSETVV(x, y) => {
+                let (new_vx, borrow) =
+                    self.v_reg[y as usize].overflowing_sub(self.v_reg[x as usize]);
+                let new_vf = if borrow { 0 } else { 1 }; // reset if borrow
 
-            // 0x8XY7 - VX = VY - VX, set VF to 0 in case of underflow
-            (8, _, _, 7) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                let (new_vx, borrow) = self.v_reg[y].overflowing_sub(self.v_reg[x]);
-                let new_vf = if borrow { 0 } else { 1 };
-
-                self.v_reg[x] = new_vx;
+                self.v_reg[x as usize] = new_vx;
                 self.v_reg[0xF] = new_vf;
-            },
+            }
 
-            // 0x8XYE - VX <<= 1, Most significant bit is sotred in VF
-            (8, _, _, 0xE) => {
-                let x = dig2 as usize;
-                let msb = (self.v_reg[x] >> 1) & 1;
+            Instruction::SHIFTLV(x) => {
+                self.v_reg[0xF] = (self.v_reg[x as usize] >> 1) & 1;
+                self.v_reg[x as usize] <<= 1;
+            }
 
-                self.v_reg[x] <<= 1;
-                self.v_reg[0xF] = msb;
-            },
-
-            // 0x9XY0 - Skip Next if VX != VY
-            (9, _, _, 0) => {
-                let x = dig2 as usize;
-                let y = dig3 as usize;
-
-                if self.v_reg[x] != self.v_reg[y] {
+            Instruction::SKIPIFNOTVV(x, y) => {
+                if self.v_reg[x as usize] != self.v_reg[y as usize] {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // ANNN - I = NNN
-            (0xA, _, _, _) => {
-                let nnn = op & 0xFFF;
-
+            Instruction::SETINNN(nnn) => {
                 self.i_reg = nnn;
-            },
+            }
 
-            // BNNN - Jump to V0 + NNN
-            (0xB, _, _, _) => {
-                let nnn = op & 0xFFF;
-
+            Instruction::JMPV(nnn) => {
                 self.pc = (self.v_reg[0] as u16) + nnn;
-            },
+            }
 
-            // CXNN - VX = rand() and NN
-            (0xC, _, _, _) => {
-                let x = dig2 as usize;
-                let nn = (op & 0xFF) as u8;
+            Instruction::RAND(x, nn) => {
                 let rng: u8 = random();
+                self.v_reg[x as usize] = rng & (nn as u8);
+            }
 
-                self.v_reg[x] = rng & nn;
-            },
+            // DXYN - Draw Sprite, XY are VX/VY coord of sprite, N is the height of sprite
+            // TODO: loook at this algorithm
+            Instruction::DRAW(x, y, n) => {
+                let x_coord = self.v_reg[x as usize] as u16;
+                let y_coord = self.v_reg[y as usize] as u16;
 
-            // DXYN - Draw SPrite, XY are VX/VY coord of sprite, N is the height of sprite
-            (0xD, _, _, _) => {
-                let x_coord = self.v_reg[dig2 as usize] as u16;
-                let y_coord = self.v_reg[dig3 as usize] as u16;
-
-                let num_rows = dig4;
+                let num_rows = n;
 
                 let mut flipped = false;
                 for y_line in 0..num_rows {
@@ -372,43 +388,33 @@ impl Emu {
                 } else {
                     self.v_reg[0xF] = 0;
                 }
-            },
+            }
 
-            // EX0E - Skip if key in VX pressed
-            (0xE, _, 9, 0xE) => {
-                let x = dig2 as usize;
-                let vx = self.v_reg[x];
-                let key = self.keys[vx as usize];
-
+            Instruction::SKIPIFKEY(x) => {
+                let key = self.keys[self.v_reg[x as usize] as usize];
                 if key {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // EXA1 - Skip if key in VX not pressed
-            (0xE, _, 0xA, 1) => {
-                let x = dig2 as usize;
-                let vx = self.v_reg[x];
-                let key = self.keys[vx as usize];
-
+            Instruction::SKIPIFNOTKEY(x) => {
+                let key = self.keys[self.v_reg[x as usize] as usize];
                 if !key {
                     self.pc += 2;
                 }
-            },
+            }
 
-            // FX07 - VX = Delay Timer
-            (0xF, _, 0, 7) => {
-                let x = dig2 as usize;
-                self.v_reg[x] = self.dt;
-            },
+            Instruction::SETVDT(x) => {
+                self.v_reg[x as usize] = self.dt;
+            }
 
-            // EX0A - Wait for Key press
-            (0xF, _, 0, 0xA) => {
-                let x = dig2 as usize;
+            Instruction::WAITFORKEY(x) => {
+                // BLOCKING
+
                 let mut pressed = false;
                 for i in 0..self.keys.len() {
                     if self.keys[i] {
-                        self.v_reg[x] = i as u8;
+                        self.v_reg[x as usize] = i as u8;
                         pressed = true;
                         break;
                     }
@@ -418,101 +424,80 @@ impl Emu {
                     // redo opcode until key presesd
                     self.pc -= 2;
                 }
-            },
+            }
 
-            // FX15 - DT = VX
-            (0xF, _, 1, 5) => {
-                let x = dig2 as usize;
-                self.dt = self.v_reg[x];
-            },
-            
-            // FX18 - ST = VX
-            (0xF, _, 1, 8) => {
-                let x = dig2 as usize;
-                self.st = self.v_reg[x];
-            },
-            
-            // FX1E - I += VX
-            (0xF, _, 1, 0xE) => {
-                let x = dig2 as usize;
-                let vx = self.v_reg[x] as u16;
-                self.i_reg = self.i_reg.wrapping_add(vx);
-            },
-            
-            // FX29 - Set I to Font Address
-            (0xF, _, 2, 9) => {
+            Instruction::SETDTV(x) => {
+                self.dt = self.v_reg[x as usize];
+            }
 
-                let x = dig2 as usize;
-                let c = self.v_reg[x] as u16;
-                self.i_reg = c * 5;
-            },
+            Instruction::SETSTV(x) => {
+                self.st = self.v_reg[x as usize];
+            }
 
-            // FX33 - RAM[I] = Binary Coded Decimal of VX
-            (0xF, _, 3, 3) => {
+            Instruction::INCSETIV(x) => {
+                self.i_reg = self.i_reg.wrapping_add(self.v_reg[x as usize] as u16);
+            }
+
+            Instruction::SETIFONT(x) => {
+                let c = self.v_reg[x as usize] as u16;
+                self.i_reg = c * 5; // 5c is the beginning of the character
+                                    // TODO: Look at this when refactoring the Fontset =
+            }
+
+            Instruction::BCDTORAM(x) => {
+                let bcd = Self::double_dabble(&self.v_reg[x as usize]);
+
                 // since VX is a u8 it ranges from 0 to 255, it will always be three digits
-                let x = dig2 as usize;
-                let vx = self.v_reg[x];
-
-                let bcd = Self::double_dabble(&vx);
-
-                self.ram[self.i_reg as usize] = bcd[0];
-                self.ram[(self.i_reg + 1) as usize] = bcd[1];
-                self.ram[(self.i_reg + 2) as usize] = bcd[2];
-            },
+                for (i, bin) in bcd.iter().enumerate() {
+                    self.ram[self.i_reg as usize + i] = *bin;
+                }
+            }
 
             // FX55 - Store V0 - VX into I
-            (0xF, _, 5, 5) => {
-
-                let x = dig2 as usize;
-                let i = self.i_reg as usize;
+            Instruction::VTORAM(x) => {
                 for idx in 0..=x {
-                    self.ram[i + idx] = self.v_reg[idx];
+                    self.ram[self.i_reg as usize + idx as usize] = self.v_reg[idx as usize];
                 }
-            },
-            
+            }
+
             // FX65 - Load I into V0 - VX
-            (0xF, _, 6, 5) => {
-
-                let x = dig2 as usize;
-                let i = self.i_reg as usize;
+            Instruction::RAMTOV(x) => {
                 for idx in 0..=x {
-                    self.v_reg[idx] = self.ram[i + idx];
+                    self.v_reg[idx as usize] = self.ram[self.i_reg as usize + idx as usize];
                 }
-            },
-            
-            (_, _, _, _) => unimplemented!("Unimplemented opcode {:#02x}", op),
+            }
         }
     }
 
     pub fn double_dabble(num: &u8) -> [u8; 3] {
+        // TODO: Improve the writing of this algorithm
+
         // implementation of the double dable algorithm for finding BCD
         // 7ns per cycle compared to the book's 25ns
-        
+
         let mut res: u32 = (0 | num) as u32; // convert to 32-bit num for padding, need 4bits for every digit (20 in this case)
-        
+
         // masks to extract relevant digit from number
-        let ones_mask = 0b1111_0000_0000; 
+        let ones_mask = 0b1111_0000_0000;
         let tens_mask = 0b1111_0000_0000_0000;
         let huns_mask = 0b1111_0000_0000_0000_0000;
-        
-        for _ in 0..8 { // algo will only shift length of num times (8 times)
-            
+
+        for _ in 0..8 {
+            // algo will only shift length of num times (8 times)
+
             if res & ones_mask >= 0b0101_0000_0000 {
-                
                 res += 0b0011_0000_0000; // if ones digit is greater than or equal to 5 add 3 to THAT digit
             }
             if res & tens_mask >= 0b0101_0000_0000_0000 {
-                
                 res += 0b0011_0000_0000_0000;
             }
             if res & huns_mask >= 0b0101_0000_0000_0000_0000 {
-                
                 res += 0b0011_0000_0000_0000_0000;
             }
-            
+
             res <<= 1;
         }
-        
+
         let huns = (res & huns_mask) >> 16;
         let tens = (res & tens_mask) >> 12;
         let ones = (res & ones_mask) >> 8;
@@ -520,4 +505,3 @@ impl Emu {
         [huns as u8, tens as u8, ones as u8]
     }
 }
-
