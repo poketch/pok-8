@@ -475,8 +475,6 @@ impl Emu {
     }
 
     pub fn double_dabble(num: &u8) -> [u8; 3] {
-        // TODO: Improve the writing of this algorithm
-
         // implementation of the double dable algorithm for finding BCD
         // 1st iteration: 7ns per cycle compared to the book's 25ns
         // 2nd iteration: 6ns per cycle compared to the book's 25ns
