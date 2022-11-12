@@ -478,35 +478,39 @@ impl Emu {
         // TODO: Improve the writing of this algorithm
 
         // implementation of the double dable algorithm for finding BCD
-        // 7ns per cycle compared to the book's 25ns
+        // 1st iteration: 7ns per cycle compared to the book's 25ns
+        // 2nd iteration: 6ns per cycle compared to the book's 25ns
 
-        let mut res: u32 = (0 | num) as u32; // convert to 32-bit num for padding, need 4bits for every digit (20 in this case)
+        let mut num: u32 = (0 | num) as u32; // convert to 32-bit num for padding putting the original number at the end, need 4bits for every digit (20 in this case)
 
         // masks to extract relevant digit from number
-        let ones_mask = 0b1111_0000_0000;
-        let tens_mask = 0b1111_0000_0000_0000;
-        let huns_mask = 0b1111_0000_0000_0000_0000;
+        let mask = 0b1111;
 
         for _ in 0..8 {
             // algo will only shift length of num times (8 times)
 
-            if res & ones_mask >= 0b0101_0000_0000 {
-                res += 0b0011_0000_0000; // if ones digit is greater than or equal to 5 add 3 to THAT digit
-            }
-            if res & tens_mask >= 0b0101_0000_0000_0000 {
-                res += 0b0011_0000_0000_0000;
-            }
-            if res & huns_mask >= 0b0101_0000_0000_0000_0000 {
-                res += 0b0011_0000_0000_0000_0000;
+            for i in 0..3 { //here checking each digit there are only three as num(u8) has the limi 255
+
+                let offset = 4*(2+i); // adds the requisite number of zeroes to target the desired digit
+                
+                if num &  ( mask << offset ) >= (5 << offset) {
+                    num += 3 << offset //add three to the target digit
+                }
             }
 
-            res <<= 1;
+            num <<= 1; //left shift once
         }
 
-        let huns = (res & huns_mask) >> 16;
-        let tens = (res & tens_mask) >> 12;
-        let ones = (res & ones_mask) >> 8;
+        let mut res = [0; 3];
 
-        [huns as u8, tens as u8, ones as u8]
+        for i in 0..3 {
+
+            let offset =  4*(2+i); // distacnce to left shift to mask the correct digit
+            let bottom = 4*(4-i); // distance to right shift to extract the correct 4 bits
+
+            res[i] = ((num & (mask << offset)) >> bottom) as u8;
+        }
+
+        res
     }
 }
