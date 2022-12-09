@@ -480,6 +480,8 @@ impl Emu {
         // 2nd iteration: 6ns per cycle compared to the book's 25ns
 
         let mut num: u32 = (0 | num) as u32; // convert to 32-bit num for padding putting the original number at the end, need 4bits for every digit (20 in this case)
+        // a 16 bit number would need (16 + 5*4) = 36 total bits to be converted
+
 
         // masks to extract relevant digit from number
         let mask = 0b1111;
