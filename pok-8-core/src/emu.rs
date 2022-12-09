@@ -505,10 +505,9 @@ impl Emu {
 
         for i in 0..3 {
 
-            let offset =  4*(2+i); // distacnce to left shift to mask the correct digit
-            let bottom = 4*(4-i); // distance to right shift to extract the correct 4 bits
+            let offset = 4*(4-i); // distance to right shift to extract the correct 4 bits
 
-            res[i] = ((num & (mask << offset)) >> bottom) as u8;
+            res[i] = ((num & (mask << offset)) >> offset) as u8;
         }
 
         res
